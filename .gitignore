@@ -36,6 +36,7 @@ local.properties
 
 # node.js
 #
+package-lock.json
 node_modules/
 npm-debug.log
 yarn-error.log
@@ -72,3 +73,14 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Arquivos de Byte compilados
+__pycache__/
+
+# Arquivos compilados de extensão .pyc
+*.pyc
+
+# Virtual environment
+venv/
+env/
+pip_list_output.txt
