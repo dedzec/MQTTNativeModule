@@ -25,10 +25,5 @@
         </intent-filter>
       </activity>
 
-        <service
-            android:name="org.eclipse.paho.android.service.MqttService"
-            android:exported="false"
-            android:enabled="true"
-            tools:ignore="MissingClass" />
     </application>
 </manifest>

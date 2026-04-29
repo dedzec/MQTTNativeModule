@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Interface de rede Wi-Fi específica
-interface="wlp0s20f3"
+interface="wlan0"
 
 # Obtém o endereço IP da interface Wi-Fi
 ip=$(ip addr show dev "$interface" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')

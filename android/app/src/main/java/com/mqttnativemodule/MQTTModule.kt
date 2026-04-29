@@ -1,142 +1,165 @@
 package com.mqttnativemodule
 
+import com.facebook.fbreact.specs.NativeMqttSpec
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.bridge.ReactContextBaseJavaModule
-import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.modules.core.DeviceEventManagerModule
-import org.eclipse.paho.android.service.MqttAndroidClient
-import org.eclipse.paho.client.mqttv3.IMqttActionListener
-import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
-import org.eclipse.paho.client.mqttv3.IMqttToken
-import org.eclipse.paho.client.mqttv3.MqttCallback
-import org.eclipse.paho.client.mqttv3.MqttConnectOptions
-import org.eclipse.paho.client.mqttv3.MqttException
-import org.eclipse.paho.client.mqttv3.MqttMessage
+import com.hivemq.client.mqtt.MqttGlobalPublishFilter
+import com.hivemq.client.mqtt.datatypes.MqttQos
+import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient
+import com.hivemq.client.mqtt.mqtt3.Mqtt3Client
+import java.net.URI
+import java.nio.charset.StandardCharsets
 
-class MQTTModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext), MqttCallback {
+class MQTTModule(reactContext: ReactApplicationContext) : NativeMqttSpec(reactContext) {
 
-    private lateinit var mqttClient: MqttAndroidClient
+    private var mqttClient: Mqtt3AsyncClient? = null
+    private var currentClientId: String = ""
 
-    override fun getName(): String {
-        return "MQTTModule"
-    }
+    override fun getName() = NAME
 
-    @ReactMethod
-    fun connect(brokerUrl: String, clientId: String, promise: Promise) {
-        mqttClient = MqttAndroidClient(reactApplicationContext, brokerUrl, clientId)
-        mqttClient.setCallback(this)
-
+    override fun connect(brokerUrl: String, clientId: String, promise: Promise) {
         try {
-            val options = MqttConnectOptions()
-            options.keepAliveInterval = 10
-            mqttClient.connect(options, null, object : IMqttActionListener {
-                override fun onSuccess(asyncActionToken: IMqttToken) {
-                    promise.resolve("Connected to $brokerUrl")
-                }
+            val uri = URI(brokerUrl)
+            val host = uri.host
+            val port = if (uri.port > 0) uri.port else 1883
+            currentClientId = clientId
 
-                override fun onFailure(asyncActionToken: IMqttToken, exception: Throwable) {
-                    promise.reject("Connection failed", exception)
+            mqttClient = Mqtt3Client.builder()
+                .identifier(clientId)
+                .serverHost(host)
+                .serverPort(port)
+                .buildAsync()
+
+            mqttClient!!.connectWith()
+                .send()
+                .whenComplete { _, throwable ->
+                    if (throwable != null) {
+                        promise.reject("Connection failed", throwable)
+                    } else {
+                        mqttClient!!.publishes(MqttGlobalPublishFilter.ALL) { publish ->
+                            val params = Arguments.createMap()
+                            params.putString("topic", publish.topic.toString())
+                            val payload = publish.payload
+                                .map { StandardCharsets.UTF_8.decode(it).toString() }
+                                .orElse("")
+                            params.putString("message", payload)
+                            sendEvent("messageArrived", params)
+                        }
+                        promise.resolve("Connected to $brokerUrl")
+                    }
                 }
-            })
-        } catch (e: MqttException) {
+        } catch (e: Exception) {
             promise.reject("Connection error", e)
         }
     }
 
-    @ReactMethod
-    fun disconnect(promise: Promise) {
-        try {
-            mqttClient.disconnect()
-            promise.resolve("Disconnected")
-        } catch (e: MqttException) {
-            promise.reject("Disconnection error", e)
+    override fun disconnect(promise: Promise) {
+        val client = mqttClient ?: run {
+            promise.reject("Not connected", "MQTT client is not initialized")
+            return
         }
+        client.disconnect()
+            .whenComplete { _, throwable ->
+                if (throwable != null) {
+                    promise.reject("Disconnection error", throwable)
+                } else {
+                    val params = Arguments.createMap()
+                    params.putString("message", "Disconnected")
+                    sendEvent("connectionLost", params)
+                    promise.resolve("Disconnected")
+                }
+            }
     }
 
-    @ReactMethod
-    fun reconnect(promise: Promise) {
-        if (!::mqttClient.isInitialized) {
+    override fun reconnect(promise: Promise) {
+        val client = mqttClient ?: run {
             promise.reject("Client not initialized", "MQTT client is not initialized")
             return
         }
-
-        try {
-            mqttClient.connect(null, object : IMqttActionListener {
-                override fun onSuccess(asyncActionToken: IMqttToken) {
+        client.connectWith()
+            .send()
+            .whenComplete { _, throwable ->
+                if (throwable != null) {
+                    promise.reject("Reconnection failed", throwable)
+                } else {
                     promise.resolve("Reconnected")
                 }
+            }
+    }
 
-                override fun onFailure(asyncActionToken: IMqttToken, exception: Throwable) {
-                    promise.reject("Reconnection failed", exception)
+    override fun subscribe(topic: String, promise: Promise) {
+        val client = mqttClient ?: run {
+            promise.reject("Not connected", "MQTT client is not initialized")
+            return
+        }
+        client.subscribeWith()
+            .topicFilter(topic)
+            .qos(MqttQos.AT_LEAST_ONCE)
+            .send()
+            .whenComplete { _, throwable ->
+                if (throwable != null) {
+                    promise.reject("Subscription error", throwable)
+                } else {
+                    promise.resolve("Subscribed to $topic")
                 }
-            })
-        } catch (e: MqttException) {
-            promise.reject("Reconnection error", e)
-        }
+            }
     }
 
-    @ReactMethod
-    fun subscribe(topic: String, promise: Promise) {
-        try {
-            mqttClient.subscribe(topic, 0)
-            promise.resolve("Subscribed to $topic")
-        } catch (e: MqttException) {
-            promise.reject("Subscription error", e)
+    override fun unsubscribe(topic: String, promise: Promise) {
+        val client = mqttClient ?: run {
+            promise.reject("Not connected", "MQTT client is not initialized")
+            return
         }
+        client.unsubscribeWith()
+            .topicFilter(topic)
+            .send()
+            .whenComplete { _, throwable ->
+                if (throwable != null) {
+                    promise.reject("Unsubscription error", throwable)
+                } else {
+                    promise.resolve("Unsubscribed from $topic")
+                }
+            }
     }
 
-    @ReactMethod
-    fun unsubscribe(topic: String, promise: Promise) {
-        try {
-            mqttClient.unsubscribe(topic)
-            promise.resolve("Unsubscribed from $topic")
-        } catch (e: MqttException) {
-            promise.reject("Unsubscription error", e)
+    override fun publish(topic: String, message: String, promise: Promise) {
+        val client = mqttClient ?: run {
+            promise.reject("Not connected", "MQTT client is not initialized")
+            return
         }
+        client.publishWith()
+            .topic(topic)
+            .payload(message.toByteArray(StandardCharsets.UTF_8))
+            .qos(MqttQos.AT_LEAST_ONCE)
+            .send()
+            .whenComplete { _, throwable ->
+                if (throwable != null) {
+                    promise.reject("Publish error", throwable)
+                } else {
+                    val params = Arguments.createMap()
+                    params.putString("messageId", System.currentTimeMillis().toString())
+                    sendEvent("deliveryComplete", params)
+                    promise.resolve("Message published to $topic")
+                }
+            }
     }
 
-    @ReactMethod
-    fun publish(topic: String, message: String, promise: Promise) {
-        try {
-            val mqttMessage = MqttMessage()
-            mqttMessage.payload = message.toByteArray()
-            mqttClient.publish(topic, mqttMessage)
-            promise.resolve("Message published to $topic")
-        } catch (e: MqttException) {
-            promise.reject("Publish error", e)
-        }
-    }
-
-    @ReactMethod
-    fun clientId(promise: Promise) {
-        if (::mqttClient.isInitialized) {
-            val clientId = mqttClient.clientId
-            promise.resolve(clientId)
+    override fun clientId(promise: Promise) {
+        if (mqttClient != null) {
+            promise.resolve(currentClientId)
         } else {
             promise.reject("Client not initialized", "MQTT client is not initialized")
         }
     }
 
-    // MqttCallback methods
-    override fun connectionLost(cause: Throwable?) {
-        val params = Arguments.createMap()
-        params.putString("message", cause?.message)
-        sendEvent("connectionLost", params)
+    override fun addListener(eventName: String?) {
+        // Required for RN Event Emitter
     }
 
-    override fun messageArrived(topic: String, message: MqttMessage) {
-        val params = Arguments.createMap()
-        params.putString("topic", topic)
-        params.putString("message", String(message.payload))
-        sendEvent("messageArrived", params)
-    }
-
-    override fun deliveryComplete(token: IMqttDeliveryToken) {
-        val params = Arguments.createMap()
-        params.putString("messageId", token.messageId.toString())
-        sendEvent("deliveryComplete", params)
+    override fun removeListeners(count: Double) {
+        // Required for RN Event Emitter
     }
 
     private fun sendEvent(eventName: String, params: Any?) {
@@ -145,13 +168,7 @@ class MQTTModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMo
             .emit(eventName, params)
     }
 
-    @ReactMethod
-    fun addListener(eventName: String?) {
-        // Keep: Required for RN built in Event Emitter Calls.
-    }
-
-    @ReactMethod
-    fun removeListeners(count: Int?) {
-        // Keep: Required for RN built in Event Emitter Calls.
+    companion object {
+        const val NAME = "MQTTModule"
     }
 }

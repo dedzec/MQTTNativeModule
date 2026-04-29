@@ -2,16 +2,15 @@ import React, { useEffect, useState } from 'react';
 import {
   // eslint-disable-next-line react-native/split-platform-components
   ToastAndroid,
-  NativeModules,
   NativeEventEmitter,
   Text,
   View,
 } from 'react-native';
 import FormInput from './components/FormInput';
 import TextButton from './components/TextButton';
+import NativeMqtt from './specs/NativeMqtt';
 
-const { MQTTModule } = NativeModules;
-const mqttModuleEmitter = new NativeEventEmitter(MQTTModule);
+const mqttModuleEmitter = new NativeEventEmitter(NativeMqtt);
 
 function MqttScreen() {
   const [topic, setTopic] = useState('test/topic');
@@ -62,7 +61,7 @@ function MqttScreen() {
       deliveryCompleteSubscription.remove();
 
       // Clean up: Disconnect MQTT on component unmount
-      MQTTModule.disconnect()
+      NativeMqtt.disconnect()
         .then((response) => console.log(response))
         .catch((error) => console.error(error));
     };
@@ -70,7 +69,7 @@ function MqttScreen() {
 
   const connectMQTT = async () => {
     try {
-      await MQTTModule.connect('tcp://broker.hivemq.com:1883', 'ReactNative');
+      await NativeMqtt.connect('tcp://broker.hivemq.com:1883', 'ReactNative');
       setConnected(true);
       setConnectionStatus('Connected');
 
@@ -83,7 +82,7 @@ function MqttScreen() {
 
   const subscribeToTopic = async () => {
     try {
-      await MQTTModule.subscribe(topic);
+      await NativeMqtt.subscribe(topic);
       console.log(`Subscribed to ${topic}`);
 
       ToastAndroid.show('Subscribed', ToastAndroid.SHORT);
@@ -94,7 +93,7 @@ function MqttScreen() {
 
   const unsubscribeFromTopic = async () => {
     try {
-      await MQTTModule.unsubscribe(topic);
+      await NativeMqtt.unsubscribe(topic);
       console.log(`Unsubscribed from ${topic}`);
 
       ToastAndroid.show('Unsubscribed', ToastAndroid.SHORT);
@@ -105,7 +104,7 @@ function MqttScreen() {
 
   const publishMessage = async () => {
     try {
-      await MQTTModule.publish(topic, message);
+      await NativeMqtt.publish(topic, message);
     } catch (error) {
       console.error('Failed to publish message', error);
     }
@@ -114,7 +113,7 @@ function MqttScreen() {
   // eslint-disable-next-line no-unused-vars
   const reconnectMQTT = async () => {
     try {
-      await MQTTModule.reconnect();
+      await NativeMqtt.reconnect();
       setConnected(true);
       setConnectionStatus('Reconnected');
 
@@ -126,11 +125,9 @@ function MqttScreen() {
 
   const disconnectMQTT = async () => {
     try {
-      await MQTTModule.disconnect();
+      await NativeMqtt.disconnect();
       setConnected(false);
       setConnectionStatus('Disconnected');
-
-      ToastAndroid.show('Disconnected', ToastAndroid.SHORT);
     } catch (error) {
       console.error('Failed to disconnect', error);
     }
@@ -138,7 +135,7 @@ function MqttScreen() {
 
   const getClientId = async () => {
     try {
-      const clientId = await MQTTModule.clientId();
+      const clientId = await NativeMqtt.clientId();
       console.log('Client ID:', clientId);
       setConnectionStatus(`Connected: ${clientId}`);
     } catch (error) {

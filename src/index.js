@@ -5,7 +5,7 @@ import {
   StatusBar,
   useColorScheme,
 } from 'react-native';
-import { Colors } from 'react-native/Libraries/NewAppScreen';
+const Colors = { darker: '#1a1a1a', lighter: '#f3f3f3' };
 
 import MqttScreen from './MqttScreen';
 

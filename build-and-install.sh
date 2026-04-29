@@ -31,7 +31,7 @@ function execute_python_script() {
     local params=$1
 
     # Navegar até o diretório localize
-    cd localize
+    pushd localize > /dev/null
 
     # Verificar se o ambiente virtual está configurado corretamente
     if [ ! -d "venv" ]; then
@@ -47,21 +47,21 @@ function execute_python_script() {
     output=$(./venv/bin/python3 main.py $params)
 
     # Extrair as coordenadas x e y da saída do script Python
-    x=$(echo $output | grep -oP '(?<=x=)\d+')
-    y=$(echo $output | grep -oP '(?<=y=)\d+')
+    x=$(echo $output | grep -oP '(?<=x=)\d+' || true)
+    y=$(echo $output | grep -oP '(?<=y=)\d+' || true)
 
     echo "Coordenadas recebidas: x=$x, y=$y"
 
     # Voltar para o diretório raiz do projeto
-    cd ..
+    popd > /dev/null
 }
 
 # Interface de rede Wi-Fi específica
-interface="wlp0s20f3"
+interface="wlan0"
 
 # Obtém o endereço IP da interface Wi-Fi
 port=8088
-ip=$(ip addr show dev "$interface" | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+ip=$(ip addr show dev "$interface" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || true)
 echo "Endereço IP do Wi-Fi ($interface): $ip"
 
 # Navegar até o diretório android
@@ -108,94 +108,6 @@ adb install -r ./android/app/build/outputs/apk/debug/app-debug.apk
 
 # Abrir o aplicativo instalado no dispositivo
 echo "Abrindo o aplicativo instalado..."
-adb shell am start -n "${package_name}/.MainActivity" &
+adb shell am start -n "${package_name}/.MainActivity"
 
-# Obter o PID do processo do adb shell am start
-PID=$!
-
-# Mostrar loading até que o aplicativo seja iniciado
-echo "Aguardando o aplicativo iniciar..."
-show_loading $PID
-sleep 2
-
-# Simular pressionamento do botão de menu (keyevent 82)
-echo "Simulando pressionamento do botão de menu..."
-adb shell input keyevent 82
-
-#--------------------------------
-# Touch: Settings
-#--------------------------------
-# Capturar screenshot e salvar em localize/screenshot.png
-echo "Capturando screenshot..."
-adb exec-out screencap -p > localize/screenshot.png
-sleep 2
-
-# Executar o script Python com o parâmetro 'Settings' e capturar as coordenadas x e y
-execute_python_script "--search_text Settings"
-
-# Tocar na tela nas coordenadas especificadas
-echo "Tocando na tela nas coordenadas: x=$x, y=$y"
-adb shell input tap $x $y
-sleep 2
-
-#--------------------------------
-# Touch: Debug server host
-#--------------------------------
-# Capturar screenshot e salvar em localize/screenshot.png
-echo "Capturando screenshot..."
-adb exec-out screencap -p > localize/screenshot.png
-sleep 2
-
-# Executar o script Python com o parâmetro 'host' e capturar as coordenadas x e y
-execute_python_script "--search_text host"
-
-# Tocar na tela nas coordenadas especificadas
-echo "Tocando na tela nas coordenadas: x=$x, y=$y"
-adb shell input tap $x $y
-sleep 2
-
-#--------------------------------
-# Touch: Textfield
-#--------------------------------
-# Capturar screenshot e salvar em localize/screenshot.png
-echo "Capturando screenshot..."
-adb exec-out screencap -p > localize/screenshot.png
-sleep 2
-
-# Executar o script Python com o parâmetro do template e capturar as coordenadas x e y
-# execute_python_script "--template_path ./images/textfield.png"
-
-# Tocar na tela nas coordenadas especificadas
-# echo "Tocando na tela nas coordenadas: x=$x, y=$y"
-adb shell input text "$ip:$port"
-sleep 2
-
-echo "Confirmando alterações..."
-buttonOK
-sleep 1
-
-echo "Retornando para a tela inicial..."
-adb shell input keyevent KEYCODE_BACK
-sleep 1
-
-# Simular pressionamento do botão de menu (keyevent 82)
-echo "Simulando pressionamento do botão de menu..."
-adb shell input keyevent 82
-
-#--------------------------------
-# Touch: Reload
-#--------------------------------
-# Capturar screenshot e salvar em localize/screenshot.png
-echo "Capturando screenshot..."
-adb exec-out screencap -p > localize/screenshot.png
-sleep 2
-
-# Executar o script Python com o parâmetro 'Reload' e capturar as coordenadas x e y
-execute_python_script "--search_text Reload"
-
-# Tocar na tela nas coordenadas especificadas
-echo "Tocando na tela nas coordenadas: x=$x, y=$y"
-adb shell input tap $x $y
-sleep 2
-
-echo "Instalação, abertura, captura de tela, execução do script Python, localização e toque na tela completados com sucesso!"
+echo "APK instalado e aplicativo aberto com sucesso! Metro: $ip:$port"
